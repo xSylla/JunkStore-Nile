@@ -1,0 +1,30 @@
+{
+  "Sections": [
+    {
+      "Name": "Amazon",
+      "Visible": true,
+      "Description": "Settings specific to the Amazon store",
+      "ModeLevel": 0,
+      "Options": [
+        {
+          "Key": "InstallLocation",
+          "Label": "Install Location",
+          "Description": "Set the install location for Amazon Games Store games. This will be used when installing new games.",
+          "DefaultValue": "SSD",
+          "Value": "SSD",
+          "Type": "Enum",
+          "Min": 0,
+          "Max": 0,
+          "ModeLevel": 0,
+          "Parents": [],
+          "EnumValues": [
+            { "Key": "SSD", "Description": "Internal SSD" },
+            { "Key": "MicroSD", "Description": "Micro SD Card" }
+          ]
+        }
+      ]
+    }
+  ],
+  "Autoexec": "",
+  "AutoexecEnabled": false
+}
