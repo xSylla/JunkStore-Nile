@@ -13,9 +13,8 @@ if [[ "${PLATFORM}" == "Amazon" ]]; then
 fi
 
 function Amazon_init() {
-    $AMAZONCONF --list --dbfile $DBFILE $OFFLINE_MODE  # &> /dev/null
+    $AMAZONCONF --list --dbfile $DBFILE $OFFLINE_MODE  &> /dev/null
 }
-
 function Amazon_refresh() {
     TEMP=$(Amazon_init)
     echo "{\"Type\": \"RefreshContent\", \"Content\": {\"Message\": \"Refreshed\"}}"
@@ -38,12 +37,13 @@ function Amazon_getgames(){
     fi
     IMAGE_PATH=""
     TEMP=$($AMAZONCONF --getgameswithimages "${IMAGE_PATH}" "${FILTER}" "${INSTALLED}" "${LIMIT}" "true" --dbfile $DBFILE)
-    #{"Type": "GameGrid", "Content": {"NeedsLogin": "true", "Games": []}}
-    if [[ $TEMP == "{\"Type\": \"GameGrid\", \"Content\": {\"NeedsLogin\": \"true\", \"Games\": []}}" ]]; then
+    # This might be a bit fragile, but it should work for now.
+    # checking if the Game's content is empty, if it is, then we need to refresh the list
+    echo $TEMP >> $DECKY_PLUGIN_LOG_DIR/debug.log
+    if echo "$TEMP" | jq -e '.Content.Games | length == 0' &>/dev/null; then
         if [[ $FILTER == "" ]] && [[ $INSTALLED == "false" ]]; then
             TEMP=$(Amazon_init)
             TEMP=$($AMAZONCONF --getgameswithimages "${IMAGE_PATH}" "${FILTER}" "${INSTALLED}" "${LIMIT}" "true" --dbfile $DBFILE)
-        
         fi
     fi
     echo $TEMP
@@ -55,52 +55,33 @@ function Amazon_getplatformconfig(){
     TEMP=$($AMAZONCONF --confjson "${1}" --platform Proton --fork "" --version "" --dbfile $DBFILE)
     echo $TEMP
 }
-
 function Amazon_cancelinstall(){
     PID=$(cat "${DECKY_PLUGIN_LOG_DIR}/${1}.pid")
+    PROGRESS_LOG="${DECKY_PLUGIN_LOG_DIR}/${1}.progress"
     killall -w nile
+    grep -m 1 '^\[cli\] INFO: Download size:' $PROGRESS_LOG > "${DECKY_PLUGIN_LOG_DIR}/tmp" && mv "${DECKY_PLUGIN_LOG_DIR}/tmp" $PROGRESS_LOG
     rm "${DECKY_PLUGIN_LOG_DIR}/tmp.pid"
     rm "${DECKY_PLUGIN_LOG_DIR}/${1}.pid"
     echo "{\"Type\": \"Success\", \"Content\": {\"Message\": \"${1} installation Cancelled\"}}"
 }
-
 function Amazon_download(){
     PROGRESS_LOG="${DECKY_PLUGIN_LOG_DIR}/${1}.progress"
-    cd "${INSTALL_DIR}"
-    GAME_DIR=$($AMAZONCONF --get-dir-name "${1}" --dbfile $DBFILE $OFFLINE_MODE)
-    $NILE install $1 --path "${INSTALL_DIR}" --max-workers 10 >> "${DECKY_PLUGIN_LOG_DIR}/${1}.log" &> $PROGRESS_LOG &
+    GAME_DIR=$($AMAZONCONF --get-game-dir "${1}" --dbfile $DBFILE $OFFLINE_MODE)
+    $NILE install $1 --base-path "${INSTALL_DIR}" --max-workers 10 >> "${DECKY_PLUGIN_LOG_DIR}/${1}.log" &> $PROGRESS_LOG &
     echo $! > "${DECKY_PLUGIN_LOG_DIR}/${1}.pid"
     echo "{\"Type\": \"Progress\", \"Content\": {\"Message\": \"Downloading\"}}"
 
 }
 function Amazon_update(){
     PROGRESS_LOG="${DECKY_PLUGIN_LOG_DIR}/${1}.progress"
-    GAME_DIR=$($AMAZONCONF --get-dir-name "${1}" --dbfile $DBFILE $OFFLINE_MODE)
-    $NILE update $1 --path "${INSTALL_DIR}" --max-workers 10 >> "${DECKY_PLUGIN_LOG_DIR}/${1}.log" 2> $PROGRESS_LOG &
+    $NILE update $1 >> "${DECKY_PLUGIN_LOG_DIR}/${1}.log" 2>> $PROGRESS_LOG &
     echo $! > "${DECKY_PLUGIN_LOG_DIR}/${1}.pid"
     echo "{\"Type\": \"Progress\", \"Content\": {\"Message\": \"Updating\"}}"
 
 }
-#function Amazon_download-saves(){
-#    PROGRESS_LOG="${DECKY_PLUGIN_LOG_DIR}/${1}.progress"
-#    $NILE download-saves  $1 -y  >> "${DECKY_PLUGIN_LOG_DIR}/${1}.log" 2>> $PROGRESS_LOG &
-#    echo $! > "${DECKY_PLUGIN_LOG_DIR}/${1}.pid"
-#    echo "{\"Type\": \"Progress\", \"Content\": {\"Message\": \"Downloading Saves\"}}"
-#
-#}
 function Amazon_verify(){
     PROGRESS_LOG="${DECKY_PLUGIN_LOG_DIR}/${1}.progress"
     $NILE verify $1 >> "${DECKY_PLUGIN_LOG_DIR}/${1}.log" 2>> $PROGRESS_LOG &
-    echo $! > "${DECKY_PLUGIN_LOG_DIR}/${1}.pid"
-    echo "{\"Type\": \"Progress\", \"Content\": {\"Message\": \"Updating\"}}"
-
-}
-function Amazon_repair(){
-    PROGRESS_LOG="${DECKY_PLUGIN_LOG_DIR}/${1}.progress"
-     # GAME_DBID=$($AMAZONCONF --get-game-dbid "${1}" --dbfile $DBFILE)
-     GAME_DIR=$($AMAZONCONF --get-dir-name "${1}" --dbfile $DBFILE $OFFLINE_MODE)
-    $NILE --auth-config-path "${AUTH_TOKENS}" repair --lang en-US --platform windows $1 -p "${INSTALL_DIR}/${GAME_DIR}" --max-workers 10 >> "${DECKY_PLUGIN_LOG_DIR}/${1}.log" 2> $PROGRESS_LOG &
- 
     echo $! > "${DECKY_PLUGIN_LOG_DIR}/${1}.pid"
     echo "{\"Type\": \"Progress\", \"Content\": {\"Message\": \"Updating\"}}"
 
@@ -113,7 +94,6 @@ function Amazon_protontricks(){
     ARGS="--verbose $2 --gui &> \\\"${DECKY_PLUGIN_LOG_DIR}/${1}.log\\\""
     launchoptions "${PROTON_TRICKS}"  "${ARGS}" "${3}" "Protontricks" false ""
 }
-
 #this needs more thought
 function Amazon_import(){
     PROGRESS_LOG="${DECKY_PLUGIN_LOG_DIR}/${1}.progress"
@@ -129,73 +109,49 @@ function Amazon_import(){
     echo "{\"Type\": \"Progress\", \"Content\": {\"Message\": \"Updating\"}}"
 
 }
-function Amazon_move(){
-    PROGRESS_LOG="${DECKY_PLUGIN_LOG_DIR}/${1}.progress"
-    GAME_DIR=$($AMAZONCONF --get-game-dir "${1}" --dbfile $DBFILE $OFFLINE_MODE)
-    SKIP_MOVE=""
-    if [ -d "${GAME_DIR}" ]; then
-        SKIP_MOVE="--skip-move"
-    fi
-    $NILE move $1 "${GAME_DIR}" $SKIP_MOVE $OFFLINE_MODE >> "${DECKY_PLUGIN_LOG_DIR}/${1}.log" 2>> $PROGRESS_LOG &
-    echo $! > "${DECKY_PLUGIN_LOG_DIR}/${1}.pid"
-    echo "{\"Type\": \"Progress\", \"Content\": {\"Message\": \"Updating\"}}"
-
-}
-
-function Amazon_install(){
-    PROGRESS_LOG="${DECKY_PLUGIN_LOG_DIR}/${1}.progress"
-    rm $PROGRESS_LOG &>> ${DECKY_PLUGIN_LOG_DIR}/${1}.log
-    # GAME_DBID=$($AMAZONCONF --get-game-dbid "${1}" --dbfile $DBFILE)
-    INFO_FILENAME="amazongame-${1}.info"
-    pushd "${INSTALL_DIR}" &>> ${DECKY_PLUGIN_LOG_DIR}/${1}.log
-    GAME_INFO=$(find . -type f -name $INFO_FILENAME)
-    popd &>> ${DECKY_PLUGIN_LOG_DIR}/${1}.log
-
-    $AMAZONCONF --process-info-file "${GAME_INFO}" --dbfile $DBFILE $OFFLINE_MODE # >> "${DECKY_PLUGIN_LOG_DIR}/${1}.log" 
-    RESULT=$($AMAZONCONF --addsteamclientid "${1}" "${2}" --dbfile $DBFILE)
-    TEMP=$($AMAZONCONF --update-umu-id "${1}" amazon --dbfile $DBFILE)
-    # mkdir -p "${HOME}/.compat/${1}"  
-    TEMP=$($AMAZONCONF --launchoptions "${1}" "" "" --dbfile $DBFILE $OFFLINE_MODE)
-    echo $TEMP
-
-}
-
 function Amazon_update-umu-id(){
     TEMP=$($AMAZONCONF --update-umu-id "${1}" amazon --dbfile $DBFILE)
     echo "{\"Type\": \"Success\", \"Content\": {\"Message\": \"Umu Id updated\"}}"
 }   
-
-function Amazon_getlaunchoptions(){
-    TEMP=$($AMAZONCONF --launchoptions "${1}" "" "" --dbfile $DBFILE $OFFLINE_MODE)
+function Amazon_install(){
+    PROGRESS_LOG="${DECKY_PLUGIN_LOG_DIR}/${1}.progress"
+    rm $PROGRESS_LOG &>> ${DECKY_PLUGIN_LOG_DIR}/${1}.log
+    RESULT=$($AMAZONCONF --addsteamclientid "${1}" "${2}" --dbfile $DBFILE)
+    TEMP=$($AMAZONCONF --update-umu-id "${1}" amazon --dbfile $DBFILE)
+    mkdir -p "${HOME}/Games/amazon/"
+    ARGS=$($ARGS_SCRIPT "${1}")
+    TEMP=$($AMAZONCONF --launchoptions "${1}" "${ARGS}" "" --dbfile $DBFILE $OFFLINE_MODE)
     echo $TEMP
     exit 0
 }
-
+function Amazon_getlaunchoptions(){
+    ARGS=$($ARGS_SCRIPT "${1}")
+    TEMP=$($AMAZONCONF --launchoptions "${1}" "${ARGS}" "" --dbfile $DBFILE $OFFLINE_MODE)
+    echo $TEMP
+    exit 0
+}
 function Amazon_uninstall(){
-    # GAME_DBID=$($AMAZONCONF --get-game-dbid "${1}" --dbfile $DBFILE)
-    #$NILE uninstall $1  -y $OFFLINE_MODE>> "${DECKY_PLUGIN_LOG_DIR}/${1}.log"
+    WORKING_DIR=$($AMAZONCONF --get-game-dir "${1}")
+    $NILE uninstall $1 $OFFLINE_MODE>> "${DECKY_PLUGIN_LOG_DIR}/${1}.log"
 
     # this should be fixed before used, it might kill the entire machine
-    WORKING_DIR=$($AMAZONCONF --get-working-dir "${1}" --dbfile $DBFILE)
-    if [[ "${WORKING_DIR}" != "" && "${WORKING_DIR}" != "$HOME" ]]; then
-        rm -rf "${WORKING_DIR}"
-        rm "${HOME}/.var/app/com.github.heroic_games_launcher.heroic-amazondl/config/heroic_amazondl/manifests/${1}"
-    fi
-   
+
+    #echo "Working dir is ${WORKING_DIR}"
+    #rm "${WORKING_DIR}/install.done"
     TEMP=$($AMAZONCONF --clearsteamclientid "${1}" --dbfile $DBFILE)
     echo $TEMP
-    
+
 }
 function Amazon_getgamedetails(){
     IMAGE_PATH=""
-    # always offline to speed things up.
-    TEMP=$($AMAZONCONF --update-game-details "${1}" --offline --dbfile $DBFILE)
-    echo $TEMP
     TEMP=$($AMAZONCONF --getgamedata "${1}" "${IMAGE_PATH}" --dbfile $DBFILE --forkname "Proton" --version "null" --platform "Windows")
     echo $TEMP
     exit 0
 }
-
+function Amazon_getgamesize(){
+    TEMP=$($AMAZONCONF --get-game-size "${1}" --dbfile $DBFILE)
+    echo $TEMP
+}
 function Amazon_getprogress()
 {
     TEMP=$($AMAZONCONF --getprogress "${DECKY_PLUGIN_LOG_DIR}/${1}.progress" --dbfile $DBFILE)
@@ -204,14 +160,13 @@ function Amazon_getprogress()
 function Amazon_loginstatus(){
     if [[ -z $1 ]]; then
         FLUSH_CACHE=""
-    else
+    else 
         FLUSH_CACHE="--flush-cache"
     fi
     TEMP=$($AMAZONCONF --getloginstatus --dbfile $DBFILE --dbfile $DBFILE $OFFLINE_MODE $FLUSH_CACHE)
     echo $TEMP
 
 }
-
 function Amazon_run-exe(){
     get_steam_env  
     SETTINGS=$($AMAZONCONF --get-env-settings $ID --dbfile $DBFILE)
@@ -229,6 +184,7 @@ function Amazon_run-exe(){
     GAME_PATH=$($AMAZONCONF --get-game-dir $GAME_SHORTNAME --dbfile $DBFILE --offline)
     launchoptions "\\\"${GAME_PATH}/${GAME_EXE}\\\""  "${ARGS}  &> ${DECKY_PLUGIN_LOG_DIR}/run-exe.log" "${GAME_PATH}" "Run exe" true "${COMPAT_TOOL}"
 }
+#non ottiene la lista degli exe, sembra che non acceda al path interessato per adesso
 function Amazon_get-exe-list(){
     get_steam_env
     STEAM_ID="${1}"
@@ -239,7 +195,6 @@ function Amazon_get-exe-list(){
     cd "${STEAM_COMPAT_CLIENT_INSTALL_PATH}"
     LIST=$(find . \( -name "*.exe" -o -iname "*.bat" -o -iname "*.msi" \))
     JSON="{\"Type\": \"FileContent\", \"Content\": {\"PathRoot\": \"${GAME_PATH}\", \"Files\": ["
-
     for FILE in $LIST; do
         JSON="${JSON}{\"Path\": \"${FILE}\"},"
     done
@@ -264,10 +219,9 @@ function launchoptions () {
     }}"
     echo $JSON
 }
-
 function Amazon_login(){
     get_steam_env
-    launchoptions "${DECKY_PLUGIN_RUNTIME_DIR}/scripts/Extensions/Amazon/login.sh" "" "${DECKY_PLUGIN_DIR}" "Amazon Games Login"
+    launchoptions "${DECKY_PLUGIN_RUNTIME_DIR}/scripts/Extensions/Amazon/login.sh" "" "${DECKY_PLUGIN_LOG_DIR}" "Amazon Games Login" 
 }
 function loginlaunchoptions () {
     Exe=$1 
@@ -288,15 +242,12 @@ function loginlaunchoptions () {
 }
 function Amazon_login-launch-options(){
     get_steam_env
-    loginlaunchoptions "${DECKY_PLUGIN_RUNTIME_DIR}/scripts/Extensions/Amazon/login.sh" "" "${DECKY_PLUGIN_DIR}" "Amazon Games Login"
+    loginlaunchoptions "${DECKY_PLUGIN_RUNTIME_DIR}/scripts/Extensions/Amazon/login.sh" "" "${DECKY_PLUGIN_LOG_DIR}" "Amazon Games Login" 
 }
-
-
 function Amazon_logout(){
     TEMP=$($NILE auth --logout)
     Amazon_loginstatus --flush-cache
 }
-
 function Amazon_getsetting(){
     TEMP=$($AMAZONCONF --getsetting $1 --dbfile $DBFILE)
     echo $TEMP
@@ -326,9 +277,4 @@ function Amazon_savetabconfig(){
     cat > "${DECKY_PLUGIN_RUNTIME_DIR}/conf_schemas/amazontabconfig.json"
     echo "{\"Type\": \"Success\", \"Content\": {\"Message\": \"Amazon tab config saved\"}}"
     
-}
-
-function Amazon_getgamesize(){
-    TEMP=$($AMAZONCONF --get-game-size "${1}" --dbfile $DBFILE)
-    echo $TEMP
 }

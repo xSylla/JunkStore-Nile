@@ -22,7 +22,6 @@ class CmdException(Exception):
     pass
 
 class Amazon(GamesDb.GamesDb):
-    #Variabile da linux che ha sorgente sul file settings.sh
     nile_cmd = os.path.expanduser(os.environ['NILE'])
 
 
@@ -32,21 +31,28 @@ class Amazon(GamesDb.GamesDb):
 
 
     def execute_shell(self, cmd):
-        print(f"cmd: {cmd}", file=sys.stderr)
-        result = subprocess.Popen(cmd, stdout=subprocess.PIPE, stdin=subprocess.PIPE,
-                                  stderr=subprocess.PIPE,
-                                  shell=True).communicate()[0].decode()
-        if "[cli] ERROR:" in result:
-            raise CmdException(result)
-        print(f" result: {result}", file=sys.stderr)
+        print(f"Esecuzione comando: {cmd}", file=sys.stderr)
+
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        stdout, stderr = proc.communicate()
+        stdout_str = stdout.decode()
+        stderr_str = stderr.decode()
+
+        print(f"[stdout]: {stdout_str}", file=sys.stderr)
+        print(f"[stderr]: {stderr_str}", file=sys.stderr)
+
+        output = stdout_str.strip() or stderr_str.strip()
+
+        if "[cli] ERROR:" in output:
+            raise CmdException(output)
+
         try:
-            json_result = json.loads(result)
-            # print(f"json_result: {json_result}", file=sys.stderr)
+            json_result = json.loads(output)
             return json_result
-        except json.JSONDecodeError:
-            # Handle the case when the result is not valid JSON
-            json_result = {"text": result}
-            return json_result
+        except json.JSONDecodeError as e:
+            print(f"[Errore JSON]: {e}", file=sys.stderr)
+            print(f"[Output grezzo]: {output}", file=sys.stderr)
+            return {"text": output}
 
 
     def get_list(self,  offline):
@@ -81,19 +87,6 @@ class Amazon(GamesDb.GamesDb):
             print(f"updating game id: {game_id}", file=sys.stderr)
             gamename = game_dict[game]
             self.update_game_details(game_id, gamename, False) 
-
-
-    #def get_game_json(self, game_name, offline):
-    #    plugin_data_dir= os.path.expanduser( os.environ['DECKY_PLUGIN_RUNTIME_DIR'])
-    #    tmp_dir = os.path.join(plugin_data_dir, "tmp")
-    #    if not os.path.exists(tmp_dir):
-    #        os.makedirs(tmp_dir)
-    #    games_list = self.execute_shell(os.path.expanduser(f"{self.nile_cmd} --download --exclude all --save-product-json --game {game_name} --directory \"{tmp_dir}\""))
-    #    product_file = os.path.join(tmp_dir, game_name, "product.json")
-    #    product_data = {}
-    #    with open(product_file, 'r') as f:
-    #        product_data = json.load(f)
-    #    return product_data
 
 
     def get_working_dir(self, game_id, offline):
@@ -134,123 +127,49 @@ class Amazon(GamesDb.GamesDb):
 
 
     def get_parameters(self, game_id, offline):
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.row_factory = sqlite3.Row
-        c.execute("SELECT Arguments FROM Game WHERE ShortName=?", (game_id,))
-        result = c.fetchone()
-        arguments = result['Arguments'].replace("\\", "/").replace("\"","") #.replace("-noconsole","").replace("\"exit\"","")
-        print(f"Arguments: {arguments}", file=sys.stderr)
-        conn.close()
-        return arguments
+        offline_switch = "--offline" if offline else ""
+        try:
+            result = self.execute_shell(f"{self.nile_cmd} launch {game_id} --json {offline_switch}")
+            # Estrai argomenti (se ci sono)
+            arguments = result["command"].get("arguments", [])
+            game_args = " ".join(arguments)
+            # Estrai variabili d'ambiente e formattale
+            env_vars = result.get("env", {})
+            env_args = " ".join([f'{key}="{value}"' for key, value in env_vars.items()])
+            return f"{env_args} {game_args}".strip()
+        except CmdException as e:
+            raise e
 
 
     #non c'è nessun metodo di controllo tramite json con nile, ma è possibile usare nile list-updates
     #def has_updates(self, game_id, offline):
     #    offline_switch = "--offline" if offline else ""
-    #    result = self.execute_shell(os.path.expanduser(
-    #        f"{self.nile_cmd} info {game_id} --json {offline_switch}"))
+    #    result = self.execute_shell(os.path.expanduser(f"{self.nile_cmd} info {game_id} --json {offline_switch}"))
     #    json_result = json.loads(result)
     #    if json_result['game']['version'] != json_result['install']['version']:
     #        return json.dumps({'Type': 'UpdateAvailable', 'Content': True})
     #    return json.dumps({'Type': 'UpdateAvailable', 'Content': False})
     
 
-    def get_lauch_options(self, game_id, steam_command, name, offline):
-        print(f"game_id: {game_id}", file=sys.stderr)
-        print(f"steam_command: {steam_command}", file=sys.stderr)
-        print(f"name: {name}", file=sys.stderr)
+    def get_launch_options(self, game_id, steam_command, name, offline):
         offline_switch = "--offline" if offline else ""
-        launcher = os.environ['LAUNCHER']
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.row_factory = sqlite3.Row
-        c.execute("SELECT ApplicationPath, RootFolder, WorkingDir FROM Game WHERE ShortName=?", (game_id,))
-        game = c.fetchone()
-        install_dir = os.environ['INSTALL_DIR']
-        root_dir = os.path.join(install_dir, game['RootFolder'])
-        working_dir = os.path.join(root_dir, game['WorkingDir']).replace("\\","/")
+        launcher = os.environ.get('LAUNCHER')
+        result = self.execute_shell(f"{self.nile_cmd} launch {game_id} --json {offline_switch}")
+        exe_path = result["command"]["instruction"]
+        working_dir = result["game_directory"]
         script_path = os.path.expanduser(launcher)
-        print(f"script_path: {script_path}", file=sys.stderr)
-        print(f"root_dir: {root_dir}", file=sys.stderr)
-        game_exe = os.path.join(root_dir, game['ApplicationPath']).replace("\\","/")
-        print(f"game: {game_exe}", file=sys.stderr)
-        
-
         return json.dumps(
             {
                 'Type': 'LaunchOptions',
-                'Content':
-                {
-                    'Exe': f"\"{game_exe}\"",
-                    'Options': f"{script_path} {game_id}%command%",
-                    'WorkingDir': f"\"{working_dir}\"",
+                'Content': {
+                    'Exe': f"\"{exe_path}\"".replace("$", "\\\\\\$"),
+                    'Options': f"{script_path} {game_id} %command%",
+                    'WorkingDir': working_dir,
                     'Compatibility': True,
                     'Name': name
                 }
-            })
-
-
-    #def update_game_details(self, game_id, shortname, offline):
-    #    print(f"Updating game details for: {shortname}", file=sys.stderr)
-    #    conn = self.get_connection()
-    #    c = conn.cursor()
-    #    game_json = self.get_game_json(shortname, offline)
-    #    sort_order = {
-    #        'logo': 1,
-    #        'background1': 2,
-    #        'background2': 3,
-    #        'icon': 4
-    #    }
-    #    product = game_json.get("product", {})
-    #    product_detail = product.get("productDetail", {})
-    #    details = product_detail.get("details", {})
-#
-    #    # Mapping dei campi immagini con chiavi coerenti
-    #    image_fields = {
-    #        "logo": details.get("logoUrl"),
-    #        "background1": details.get("backgroundUrl1"),
-    #        "background2": details.get("backgroundUrl2"),
-    #        "icon": product_detail.get("iconUrl")
-    #    }
-    #    for key, value in image_fields.items():
-    #        if value:
-    #            c.execute(
-    #                "INSERT INTO Images (GameID, ImagePath, sortOrder) VALUES (?, ?, ?)", (game_id, value, sort_order[key]))
-    #            conn.commit()
-    #        description = game_json['description']['full']
-    #        installers = game_json['downloads']['installers']
-    #        for installer in installers:
-    #            if installer['language'] == 'en' and installer['os'] == 'windows':
-    #                size = installer['total_size']
-    #                size = self.convert_bytes(size)
-    #                c.execute(
-    #                    "UPDATE Game SET Size=? WHERE id=?", (size, game_id))
-    #                conn.commit()
-    #                break
-    #        c.execute(
-    #            "UPDATE Game SET Notes=? WHERE id=?", 
-    #            (description, game_id))
-    #        conn.commit()
-
-
-    #def add_missing_info(self):
-    #    conn = self.get_connection()
-    #    c = conn.cursor()
-    #    c.execute("SELECT id, shortname FROM Game WHERE id NOT IN (SELECT DISTINCT gameid FROM Images)")
-    #    games = c.fetchall()
-    #    def process_game(game):
-    #        game_id = game[0]
-    #        shortname = game[1]
-    #        self.update_game_details(game_id, shortname, False) 
-    #    with concurrent.futures.ThreadPoolExecutor(max_workers=40) as executor:
-    #        executor.map(process_game, games)
-    #    conn.close()
-
-
-    #def insert_game(self, game):
-    #    conn = self.get_connection()
-    #    c = conn.cursor()
+            }
+        )
 
 
     def convert_bytes(self , size):
@@ -273,15 +192,6 @@ class Amazon(GamesDb.GamesDb):
 
     def calculate_total_size(self, progress_percentage, written_size):
         return round(written_size * (progress_percentage / 100), 2)
-
-
-    #def get_game_dbid(self, shortname):
-    #    conn = self.get_connection()
-    #    c = conn.cursor()
-    #    c.execute("SELECT DatabaseID FROM Game WHERE ShortName=?", (shortname,))
-    #    result = c.fetchone()
-    #    conn.close()
-    #    return result[0]
 
 
     def get_last_progress_update(self, file_path):
@@ -355,34 +265,6 @@ class Amazon(GamesDb.GamesDb):
             return sanitized_path
         else:
             return ""
-
-
-    #def process_info_file(self, file_path):
-    #    print(f"Processing info file: {file_path}", file=sys.stderr)
-    #    conn = self.get_connection()
-    #    c = conn.cursor()
-    #    file_path = os.path.join(os.environ['INSTALL_DIR'], file_path)
-    #    with open(file_path, 'r') as f:
-    #        data = json.load(f)
-    #        exe_file = ""
-    #        args = ""
-    #        working_dir = ""
-    #        for task in data['playTasks']:
-    #            if task['category'] == 'game':
-    #                exe_file = task['path']
-    #                if task.get('arguments'):
-    #                    args = task['arguments']
-    #                if task.get('workingDir'):
-    #                    working_dir = task['workingDir']
-    #                break
-    #        print(f"Exe file: {exe_file}", file=sys.stderr)
-    #        root_dir = os.path.abspath( os.path.dirname(file_path))
-    #        print(f"Root dir: {root_dir}", file=sys.stderr)
-    #        game_id = data['gameId']
-    #        print(f"Game id: {game_id}", file=sys.stderr)
-    #        c.execute("update Game set ApplicationPath = ?, RootFolder = ?, Arguments =?, WorkingDir =? where DatabaseID = ?", (exe_file, root_dir, args, working_dir, game_id))
-    #        conn.commit()
-    #    conn.close()
 
 
     def get_game_size(self, game_id, installed):
