@@ -89,16 +89,14 @@ class Amazon(GamesDb.GamesDb):
             self.update_game_details(game_id, gamename, False) 
 
 
-    def get_working_dir(self, game_id, offline):
-        self.get_directory(offline, game_id, 'working_directory')
-
     def get_game_dir(self, game_id, offline):
-        self.get_directory(offline, game_id, 'game_directory')
+        return self.get_directory(offline, game_id, 'game_directory')
 
-    def get_directory(self, offline, game_id, type):
+    def get_directory(self, offline, game_id, key):
         offline_switch = "--offline" if offline else ""
-        result = self.execute_shell(os.path.expanduser(f"{self.nile_cmd} launch {game_id} --json {offline_switch}"))
-        print(result[type])
+        command = os.path.expanduser(f"{self.nile_cmd} launch {game_id} --json {offline_switch}")
+        result = self.execute_shell(command)
+        return result.get(key)
 
 
     def get_login_status(self, offline, flush_cache=False):
