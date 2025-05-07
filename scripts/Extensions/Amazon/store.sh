@@ -74,14 +74,14 @@ function Amazon_download(){
 }
 function Amazon_update(){
     PROGRESS_LOG="${DECKY_PLUGIN_LOG_DIR}/${1}.progress"
-    $NILE update $1 >> "${DECKY_PLUGIN_LOG_DIR}/${1}.log" 2>> $PROGRESS_LOG &
+    $NILE update $1 --max-workers 10 >> "${DECKY_PLUGIN_LOG_DIR}/${1}.log" 2>> $PROGRESS_LOG &
     echo $! > "${DECKY_PLUGIN_LOG_DIR}/${1}.pid"
     echo "{\"Type\": \"Progress\", \"Content\": {\"Message\": \"Updating\"}}"
 
 }
 function Amazon_verify(){
     PROGRESS_LOG="${DECKY_PLUGIN_LOG_DIR}/${1}.progress"
-    $NILE verify $1 >> "${DECKY_PLUGIN_LOG_DIR}/${1}.log" 2>> $PROGRESS_LOG &
+    $NILE verify $1 --max-workers 10 >> "${DECKY_PLUGIN_LOG_DIR}/${1}.log" 2>> $PROGRESS_LOG &
     echo $! > "${DECKY_PLUGIN_LOG_DIR}/${1}.pid"
     echo "{\"Type\": \"Progress\", \"Content\": {\"Message\": \"Updating\"}}"
 
@@ -97,7 +97,7 @@ function Amazon_protontricks(){
 #this needs more thought
 function Amazon_import(){
     PROGRESS_LOG="${DECKY_PLUGIN_LOG_DIR}/${1}.progress"
-     GAME_DIR=$($AMAZONCONF --get-game-dir "${1}" --dbfile $DBFILE $OFFLINE_MODE)
+    GAME_DIR=$($AMAZONCONF --get-game-dir "${1}" --dbfile $DBFILE $OFFLINE_MODE)
     if [ -d "${GAME_DIR}" ]; then
         $NILE import $1 "${GAME_DIR}" $OFFLINE_MODE >> "${DECKY_PLUGIN_LOG_DIR}/${1}.log" 2>> $PROGRESS_LOG &
         echo $! > "${DECKY_PLUGIN_LOG_DIR}/${1}.pid"
@@ -112,7 +112,7 @@ function Amazon_import(){
 function Amazon_update-umu-id(){
     TEMP=$($AMAZONCONF --update-umu-id "${1}" amazon --dbfile $DBFILE)
     echo "{\"Type\": \"Success\", \"Content\": {\"Message\": \"Umu Id updated\"}}"
-}   
+}
 function Amazon_install(){
     PROGRESS_LOG="${DECKY_PLUGIN_LOG_DIR}/${1}.progress"
     rm $PROGRESS_LOG &>> ${DECKY_PLUGIN_LOG_DIR}/${1}.log
@@ -184,7 +184,6 @@ function Amazon_run-exe(){
     GAME_PATH=$($AMAZONCONF --get-game-dir $GAME_SHORTNAME --dbfile $DBFILE --offline)
     launchoptions "\\\"${GAME_PATH}/${GAME_EXE}\\\""  "${ARGS}  &> ${DECKY_PLUGIN_LOG_DIR}/run-exe.log" "${GAME_PATH}" "Run exe" true "${COMPAT_TOOL}"
 }
-#non ottiene la lista degli exe, sembra che non acceda al path interessato per adesso
 function Amazon_get-exe-list(){
     get_steam_env
     STEAM_ID="${1}"
