@@ -97,12 +97,6 @@
           "Type": "ScriptAction",
           "InstalledOnly": "True"
         },
-        {
-          "ActionId": "Repair",
-          "Title": "Repair Game",
-          "Type": "ScriptAction",
-          "InstalledOnly": "True"
-        },
            {
           "ActionId": "ProtonTricks",
           "Title": "Proton Tricks",
@@ -243,12 +237,6 @@
           "Title": "Update game",
           "Type": "Update",
           "Command": "./scripts/junk-store.sh Amazon update"
-        },
-        {
-          "Id": "Repair",
-          "Title": "Repair game",
-          "Type": "Update",
-          "Command": "./scripts/junk-store.sh Amazon repair"
         },
         {
           "Id": "Import",
