@@ -55,10 +55,10 @@ fi
 
 if [[ "${RUNTIMES_EASYANTICHEAT}" == "true" ]]; then
     echo "enabling easy anti cheat"
-    export PROTON_EAC_RUNTIME="${HOME}/.steam/root/steamapps/common/Proton EasyAntiCheat Runtime/"
+    export PROTON_EAC_RUNTIME="${HOME}/.var/app/com.valvesoftware.Steam/.steam/root/steamapps/common/Proton EasyAntiCheat Runtime/"
 fi
 if [[ "${RUNTIMES_BATTLEYE}" == "true"  ]]; then
-    export PROTON_BATTLEYE_RUNTIME="${HOME}/.steam/root/steamapps/common/Proton BattlEye Runtime/"
+    export PROTON_BATTLEYE_RUNTIME="${HOME}/.var/app/com.valvesoftware.Steam/.steam/root/steamapps/common/Proton BattlEye Runtime/"
 fi
 
 if [ -z "${RUNTIMES_PULSE_LATENCY_MSEC}" ]; then

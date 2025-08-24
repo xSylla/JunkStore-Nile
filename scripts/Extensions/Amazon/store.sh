@@ -189,7 +189,7 @@ function Amazon_get-exe-list(){
     STEAM_ID="${1}"
     GAME_SHORTNAME="${2}"
     GAME_PATH=$($AMAZONCONF --get-game-dir $GAME_SHORTNAME --dbfile $DBFILE --offline)
-    export STEAM_COMPAT_DATA_PATH="${HOME}/.local/share/Steam/steamapps/compatdata/${STEAM_ID}"
+    export STEAM_COMPAT_DATA_PATH="${HOME}/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/compatdata/${STEAM_ID}"
     export STEAM_COMPAT_CLIENT_INSTALL_PATH="${GAME_PATH}"
     cd "${STEAM_COMPAT_CLIENT_INSTALL_PATH}"
     LIST=$(find . \( -name "*.exe" -o -iname "*.bat" -o -iname "*.msi" \))
